@@ -1,204 +1,164 @@
 # SEC Rule 15c3-5 Market Access Controls Example
 
-**A graduate-level demonstration of pre-trade risk controls using Kafka + Spark**
+**A hands-on demonstration of pre-trade risk controls using Apache Kafka and Apache Spark**
 
-## What You'll Learn
+## Overview
 
-This hands-on demo teaches you how to build a serverless streaming risk control system that meets SEC Rule 15c3-5 requirements for broker-dealer market access. You'll deploy a complete event-driven architecture on AWS that detects risky trading patterns in real-time using Spark SQL, enforces kill switches through Kafka's compacted topics, and maintains a full audit trail—all while understanding the regulatory context and learning from the Knight Capital incident of 2012.
+This project demonstrates how to build a serverless streaming risk control system that meets SEC Rule 15c3-5 requirements for broker-dealer market access. You'll deploy a complete event-driven architecture on AWS that detects risky trading patterns in real-time using Spark SQL, enforces kill switches through Kafka's compacted topics, and maintains a full audit trail.
 
-## Architecture Overview
+The demo connects regulatory requirements to concrete architectural patterns, drawing lessons from the Knight Capital incident of 2012 where the lack of centralized control mechanisms led to $440 million in losses in 45 minutes.
+
+## Architecture
 
 ![Architecture Diagram](designing-pre-trade-risk-controls-on-aws.png)
 
-```mermaid
-graph TB
-    subgraph "Order Flow"
-        OG[Order Generator<br/>Lambda] -->|orders.v1| KAFKA[MSK Serverless<br/>Kafka]
-    end
-    
-    subgraph "Risk Detection"
-        KAFKA -->|orders.v1| SPARK[EMR Serverless<br/>PySpark Streaming]
-        SPARK -->|risk_signals.v1| KAFKA
-        SPARK -->|killswitch.commands.v1| KAFKA
-    end
-    
-    subgraph "Control Plane"
-        OC[Operator Console<br/>API Gateway + Lambda] -->|killswitch.commands.v1| KAFKA
-        KAFKA -->|killswitch.commands.v1| KSA[Kill Switch Aggregator<br/>Lambda]
-        KSA -->|killswitch.state.v1<br/>compacted| KAFKA
-    end
-    
-    subgraph "Enforcement"
-        KAFKA -->|orders.v1| OR[Order Router<br/>Lambda]
-        KAFKA -->|killswitch.state.v1| OR
-        OR -->|orders.gated.v1| KAFKA
-        OR -->|audit.v1| KAFKA
-        OR -.->|audit index| DDB[DynamoDB]
-    end
-    
-    subgraph "Observability"
-        KAFKA -->|all topics| CW[CloudWatch Logs<br/>& Metrics]
-    end
+The system implements a separation of concerns between detection, control, and enforcement:
 
-    style KAFKA fill:#ff9900
-    style SPARK fill:#e25444
-    style DDB fill:#527fff
-```
+- **Detection Layer**: Spark Structured Streaming analyzes order patterns using SQL windows to compute risk signals
+- **Control Plane**: Kafka compacted topics maintain authoritative kill switch state with full audit history
+- **Enforcement Layer**: Order router validates every order against current kill state before routing
+- **Audit Trail**: Immutable Kafka logs and DynamoDB indexes provide complete traceability
 
 ## Key Concepts
 
 ### Control Plane vs Data Plane
-- **Control Plane**: Operator console + kill switch aggregator manage authoritative kill state
+
+The architecture separates control from data flow:
+
+- **Control Plane**: Operator console and kill switch aggregator manage authoritative kill state
 - **Data Plane**: Order router enforces kill state on every order in real-time
-- **Separation**: Detection (Spark) is decoupled from enforcement (Router)
+- **Detection**: Spark analyzes patterns and suggests actions, but doesn't directly enforce
+
+This separation ensures consistent enforcement even if detection systems fail or are delayed.
 
 ### Kafka Compaction for Kill State
-The `killswitch.state.v1` topic uses Kafka's log compaction to maintain the latest kill status per scope (GLOBAL, ACCOUNT:xxx, SYMBOL:xxx). This provides:
-- **Single source of truth**: Latest state is always available
-- **Replayability**: New consumers can bootstrap current state
-- **Auditability**: Commands topic retains full history
 
-### How This Relates to Brokerage Risk Controls
+The `killswitch.state.v1` topic uses Kafka's log compaction to maintain the latest kill status per scope (GLOBAL, ACCOUNT:xxx, SYMBOL:xxx):
+
+- **Single source of truth**: Latest state is always available to all consumers
+- **Replayability**: New services can bootstrap current state by reading the entire topic
+- **Auditability**: Commands topic retains full history of all state changes
+
+### Regulatory Context
+
 Real broker-dealers must comply with SEC Rule 15c3-5 (Market Access Rule), which requires:
+
 - Pre-trade risk controls to prevent erroneous orders
 - "Direct and exclusive control" over market access
 - Supervisory procedures and audit trails
 
 This demo implements these patterns using modern streaming architecture:
+
 - **Direct control**: Centralized kill switch with authoritative state
 - **Real-time enforcement**: Every order checked before routing
 - **Audit trail**: Immutable log of all decisions with correlation IDs
 
-## Quickstart (AWS)
+## Quick Start
 
-### Prerequisites
+### AWS Deployment (30 minutes)
+
+**Prerequisites:**
 - AWS account with appropriate permissions
-- AWS CLI configured (`aws configure`)
-- Terraform >= 1.6
-- Python 3.11+
-- Docker (for Lambda packaging)
+- AWS CLI configured
+- Terraform 1.6 or later
+- Python 3.11 or later
+- Docker
 
-### Deploy Infrastructure
+**Deploy:**
 
 ```bash
-# 1. Build Lambda packages
+# Build Lambda packages
 make build
 
-# 2. Deploy infrastructure
+# Deploy infrastructure
 cd terraform/envs/dev
 terraform init
 terraform apply
 
-# 3. Create Kafka topics
+# Create Kafka topics
 export MSK_BOOTSTRAP=$(terraform output -raw msk_bootstrap_brokers)
+cd ../../..
 ./tools/create-topics.sh
 
-# 4. Deploy Spark job
+# Deploy Spark job
 ./tools/deploy-spark-job.sh
 ```
 
-### Run Demo
+### Local Development (5 minutes)
+
+For quick iteration without AWS costs:
+
+```bash
+cd local
+docker-compose up -d
+
+# Access AKHQ UI at http://localhost:8080
+```
+
+## Running the Demo
+
+### Normal Operation
 
 ```bash
 # Start order generator (normal mode)
-aws lambda invoke --function-name dev-order-generator \
+aws lambda invoke --function-name sec-15c3-5-dev-order-generator \
   --payload '{"mode": "normal", "duration_seconds": 300}' \
   response.json
 
 # Watch orders flowing
 ./tools/tail-topic.sh orders.v1
+```
 
-# Watch risk signals
-./tools/tail-topic.sh risk_signals.v1
+### Trigger Kill Switch
 
+```bash
 # Trigger panic mode (high order rate)
-aws lambda invoke --function-name dev-order-generator \
+aws lambda invoke --function-name sec-15c3-5-dev-order-generator \
   --payload '{"mode": "panic", "account_id": "12345", "duration_seconds": 60}' \
   response.json
 
-# Observe kill command from Spark
+# Watch Spark detect breach and emit kill command
 ./tools/tail-topic.sh killswitch.commands.v1
-
-# Observe state compaction
-./tools/tail-topic.sh killswitch.state.v1
 
 # Verify orders are dropped
 ./tools/tail-topic.sh audit.v1
+```
 
-# Manual unkill via operator console
-export API_URL=$(terraform output -raw operator_console_url)
+### Manual Recovery
+
+```bash
+# Operator unkills via console
+export API_URL=$(cd terraform/envs/dev && terraform output -raw operator_console_url)
 curl -X POST $API_URL/unkill \
   -H "Content-Type: application/json" \
   -d '{"scope": "ACCOUNT:12345", "reason": "Manual override after review"}'
 ```
 
-## Quickstart (Local)
+## Testing
 
-For classroom environments or quick iteration without AWS:
-
-```bash
-# Start local Kafka + services
-cd local
-docker-compose up -d
-
-# Create topics
-docker-compose exec kafka kafka-topics --create --topic orders.v1 \
-  --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1
-
-# Run demo
-docker-compose exec order-generator python generate.py --mode panic
-
-# Observe (use AKHQ UI at http://localhost:8080)
-```
-
-See [docs/02-deploy-local.md](docs/02-deploy-local.md) for full local setup.
-
-## Demo Script (10-12 minutes)
-
-**For live lecture presentation:**
-
-1. **Setup** (2 min): Show architecture diagram, explain control plane vs data plane
-2. **Baseline** (2 min): Start normal order flow, show orders.v1 and risk_signals.v1
-3. **Trigger** (3 min): Enable panic mode, watch Spark detect threshold breach, emit KILL command
-4. **Enforcement** (2 min): Show order router dropping orders, audit trail with correlation IDs
-5. **Recovery** (2 min): Operator unkills via console, orders flow again
-6. **Compaction** (1 min): Explain how killswitch.state.v1 compaction works
-
-See [docs/03-run-demo.md](docs/03-run-demo.md) for detailed script.
-
-## Verification Commands
+Run integration tests to verify the system works:
 
 ```bash
-# Run integration tests
-./tests/integration/test_demo_flow.sh      # Test AWS deployment
-./tests/integration/test_local_stack.sh    # Test local Docker
+# Test AWS deployment
+./tests/integration/test_demo_flow.sh
 
-# Manual verification
-./tools/tail-topic.sh orders.v1 | pv -l -i 1
-
-# Query latest kill state (compacted topic)
-kcat -C -b $MSK_BOOTSTRAP -t killswitch.state.v1 -o beginning -e
-
-# Check audit decisions
-kcat -C -b $MSK_BOOTSTRAP -t audit.v1 -f 'Decision: %s\n' | grep DROP
-
-# Query DynamoDB audit index
-aws dynamodb query --table-name dev-audit-index \
-  --key-condition-expression "order_id = :oid" \
-  --expression-attribute-values '{":oid":{"S":"<order-id>"}}'
+# Test local Docker setup
+./tests/integration/test_local_stack.sh
 ```
 
 ## Documentation
 
-- [00-overview.md](docs/00-overview.md) - Architecture deep dive
-- [01-prereqs.md](docs/01-prereqs.md) - Setup requirements
-- [02-deploy-aws.md](docs/02-deploy-aws.md) - AWS deployment guide
-- [03-run-demo.md](docs/03-run-demo.md) - Step-by-step demo script
-- [04-observe.md](docs/04-observe.md) - Observability and debugging
-- [05-exercises.md](docs/05-exercises.md) - Student exercises
-- [06-troubleshooting.md](docs/06-troubleshooting.md) - Common issues
-- [07-cost-and-cleanup.md](docs/07-cost-and-cleanup.md) - Cost management
-- [08-security-notes.md](docs/08-security-notes.md) - Security considerations
+Comprehensive guides are available in the `docs/` directory:
+
+- [Architecture Overview](docs/00-overview.md) - Deep dive into system design
+- [Prerequisites](docs/01-prereqs.md) - Setup requirements
+- [AWS Deployment](docs/02-deploy-aws.md) - Step-by-step deployment guide
+- [Demo Script](docs/03-run-demo.md) - 10-12 minute classroom demo
+- [Observability](docs/04-observe.md) - Monitoring and debugging
+- [Exercises](docs/05-exercises.md) - Hands-on learning exercises
+- [Troubleshooting](docs/06-troubleshooting.md) - Common issues and solutions
+- [Cost Management](docs/07-cost-and-cleanup.md) - Cost optimization and cleanup
+- [Security Notes](docs/08-security-notes.md) - Security considerations
 
 ## Blog Post
 
@@ -221,27 +181,29 @@ Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS 
 ├── local/                 # Docker Compose for local dev
 ├── tools/                 # Helper scripts
 ├── docs/                  # Workshop documentation
+├── tests/                 # Integration tests
 └── blog/                  # Blog post content
 ```
 
 ## Cost Estimates
 
-**Typical 1-hour demo session:**
-- MSK Serverless: ~$2-3 (based on throughput)
-- EMR Serverless: ~$1-2 (based on vCPU-hours)
-- Lambda: <$0.50 (within free tier for most)
-- DynamoDB: <$0.10 (on-demand)
-- Data transfer: <$0.50
-- **Total: ~$4-6 per hour**
+Typical costs for running the demo:
 
-**Cost optimization:**
-- Use `low_cost_mode = true` in Terraform (single AZ, minimal capacity)
-- Destroy infrastructure immediately after demo
-- Use local Docker Compose for development
+- **1-hour demo**: $4-6
+- **Full-day workshop**: $30-45
+- **Local development**: $0
 
-See [docs/07-cost-and-cleanup.md](docs/07-cost-and-cleanup.md) for details.
+Cost breakdown:
+- MSK Serverless: $2-3/hour
+- EMR Serverless: $1-2/hour
+- Lambda: $0.50/hour (mostly free tier)
+- Other services: $0.50/hour
+
+See [Cost Management](docs/07-cost-and-cleanup.md) for optimization strategies.
 
 ## Cleanup
+
+Always destroy infrastructure after use to avoid charges:
 
 ```bash
 cd terraform/envs/dev
@@ -252,32 +214,46 @@ aws resourcegroupstaggingapi get-resources \
   --tag-filters Key=Project,Values=sec-15c3-5-market-access-controls
 ```
 
-## Security & Disclaimers
+## Security Disclaimer
 
-⚠️ **Educational Demo Only**
-- This is NOT production trading software
+This is an educational demonstration, not production trading software:
+
 - Uses synthetic data only
 - No real brokerage connectivity
 - Simplified security model for learning
+- Not intended for actual trading decisions
 
-**Production considerations:**
-- Add encryption at rest and in transit
-- Implement proper authentication/authorization
-- Add rate limiting and DDoS protection
-- Use AWS PrivateLink for service endpoints
-- Implement proper key management (KMS)
-- Add comprehensive monitoring and alerting
+For production use, additional controls are required:
+- Encryption at rest and in transit
+- Comprehensive authentication and authorization
+- Rate limiting and DDoS protection
+- Security scanning and penetration testing
+- Disaster recovery procedures
+- Compliance certifications
 
-See [docs/08-security-notes.md](docs/08-security-notes.md) for full discussion.
+See [Security Notes](docs/08-security-notes.md) for detailed discussion.
 
-## License
+## Learning Objectives
 
-MIT License - see LICENSE file
+This project teaches:
+
+- Event-driven architecture with Kafka
+- Stream processing with Spark SQL
+- Serverless deployment with Terraform
+- Regulatory compliance patterns
+- Operational patterns (audit trails, correlation IDs, idempotency)
+- Real-world incident analysis
 
 ## Acknowledgments
 
-Built for graduate-level data/cloud computing education at UNC Charlotte. Inspired by SEC Rule 15c3-5 market access requirements and lessons learned from the Knight Capital incident (2012).
+Built for data and cloud computing education at UNC Charlotte. Inspired by SEC Rule 15c3-5 market access requirements and lessons learned from the Knight Capital incident (2012).
 
 ## Contributing
 
-This is an educational repository. Suggestions and improvements welcome via issues or pull requests.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+Educational use disclaimer: This software is provided for educational purposes only and should not be used in production trading systems without extensive additional development, testing, and regulatory review.
