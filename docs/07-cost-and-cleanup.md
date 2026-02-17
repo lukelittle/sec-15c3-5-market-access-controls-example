@@ -135,7 +135,7 @@ aws budgets create-budget \
 **budget.json**:
 ```json
 {
-  "BudgetName": "streaming-risk-controls-demo",
+  "BudgetName": "sec-15c3-5-market-access-controls-demo",
   "BudgetLimit": {
     "Amount": "10",
     "Unit": "USD"
@@ -150,7 +150,7 @@ aws budgets create-budget \
 All resources are tagged with:
 ```hcl
 tags = {
-  Project     = "streaming-risk-controls"
+  Project     = "sec-15c3-5-market-access-controls"
   Environment = "dev"
   ManagedBy   = "terraform"
 }
@@ -199,7 +199,7 @@ terraform destroy
 ```bash
 # Check for remaining resources
 aws resourcegroupstaggingapi get-resources \
-  --tag-filters Key=Project,Values=streaming-risk-controls
+  --tag-filters Key=Project,Values=sec-15c3-5-market-access-controls
 
 # Should return empty list
 ```

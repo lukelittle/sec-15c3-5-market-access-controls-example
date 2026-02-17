@@ -1,6 +1,6 @@
 # Quick Start Guide
 
-Get the demo running in 5 minutes (local) or 30 minutes (AWS).
+Get the SEC Rule 15c3-5 market access controls demo running in 5 minutes (local) or 30 minutes (AWS).
 
 ## Local (5 Minutes)
 
@@ -191,7 +191,7 @@ aws resourcegroupstaggingapi get-resources \
 - **Deploy**: Follow [docs/02-deploy-aws.md](docs/02-deploy-aws.md)
 - **Demo**: Run [docs/03-run-demo.md](docs/03-run-demo.md)
 - **Exercises**: Try [docs/05-exercises.md](docs/05-exercises.md)
-- **Blog**: Read [blog/posts/kafka-spark-brokerage-killswitch.md](blog/posts/kafka-spark-brokerage-killswitch.md)
+- **Blog**: Read [blog/posts/sec-15c3-5-market-access-controls.md](blog/posts/sec-15c3-5-market-access-controls.md)
 
 ## Getting Help
 

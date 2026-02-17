@@ -1,6 +1,6 @@
-# Contributing to Streaming Risk Controls Demo
+# Contributing to SEC Rule 15c3-5 Market Access Controls Example
 
-Thank you for your interest in contributing! This is an educational project designed for graduate-level data engineering courses.
+Thank you for your interest in contributing! This is an educational project designed for graduate-level data engineering courses, demonstrating pre-trade risk controls that meet SEC Rule 15c3-5 requirements.
 
 ## Types of Contributions
 

@@ -13,7 +13,7 @@ variable "environment" {
 variable "name_prefix" {
   description = "Prefix for resource names"
   type        = string
-  default     = "streaming-risk"
+  default     = "sec-15c3-5"
 }
 
 variable "vpc_cidr" {

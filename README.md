@@ -1,12 +1,14 @@
-# Streaming Risk Controls: Brokerage Kill Switch Demo
+# SEC Rule 15c3-5 Market Access Controls Example
 
-**A graduate-level demonstration of real-time risk management using Kafka + Spark**
+**A graduate-level demonstration of pre-trade risk controls using Kafka + Spark**
 
 ## What You'll Learn
 
-This hands-on demo teaches you how to build a serverless streaming risk control system inspired by real-world brokerage requirements. You'll deploy a complete event-driven architecture on AWS that detects risky trading patterns in real-time using Spark SQL, enforces kill switches through Kafka's compacted topics, and maintains a full audit trail—all while understanding the regulatory context (SEC Rule 15c3-5) and learning from the Knight Capital incident of 2012.
+This hands-on demo teaches you how to build a serverless streaming risk control system that meets SEC Rule 15c3-5 requirements for broker-dealer market access. You'll deploy a complete event-driven architecture on AWS that detects risky trading patterns in real-time using Spark SQL, enforces kill switches through Kafka's compacted topics, and maintains a full audit trail—all while understanding the regulatory context and learning from the Knight Capital incident of 2012.
 
 ## Architecture Overview
+
+![Architecture Diagram](designing-pre-trade-risk-controls-on-aws.png)
 
 ```mermaid
 graph TB
@@ -200,7 +202,7 @@ aws dynamodb query --table-name dev-audit-index \
 
 ## Blog Post
 
-Read the full context and motivation: [Streaming Risk Controls: Learning from Knight Capital](blog/posts/kafka-spark-brokerage-killswitch.md)
+Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS (SEC Rule 15c3-5)](blog/posts/sec-15c3-5-market-access-controls.md)
 
 ## Repository Structure
 
@@ -247,7 +249,7 @@ terraform destroy
 
 # Verify no resources remain
 aws resourcegroupstaggingapi get-resources \
-  --tag-filters Key=Project,Values=streaming-risk-controls
+  --tag-filters Key=Project,Values=sec-15c3-5-market-access-controls
 ```
 
 ## Security & Disclaimers
@@ -274,7 +276,7 @@ MIT License - see LICENSE file
 
 ## Acknowledgments
 
-Built for graduate-level data/cloud computing education at UNC Charlotte. Inspired by real-world market access controls and the lessons learned from the Knight Capital incident (2012).
+Built for graduate-level data/cloud computing education at UNC Charlotte. Inspired by SEC Rule 15c3-5 market access requirements and lessons learned from the Knight Capital incident (2012).
 
 ## Contributing
 

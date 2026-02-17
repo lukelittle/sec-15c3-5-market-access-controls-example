@@ -11,7 +11,7 @@ terraform {
   # Optional: Uncomment for remote state
   # backend "s3" {
   #   bucket         = "your-terraform-state-bucket"
-  #   key            = "streaming-risk-controls/dev/terraform.tfstate"
+  #   key            = "sec-15c3-5-market-access-controls/dev/terraform.tfstate"
   #   region         = "us-east-1"
   #   dynamodb_table = "terraform-state-lock"
   #   encrypt        = true
@@ -23,7 +23,7 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "streaming-risk-controls"
+      Project     = "sec-15c3-5-market-access-controls"
       Environment = var.environment
       ManagedBy   = "terraform"
       Purpose     = "education"

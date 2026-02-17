@@ -24,7 +24,7 @@ Complete guide to deploying, running, and learning from the streaming risk contr
 ### Learning
 10. [05-exercises.md](05-exercises.md) - 10 student exercises
 11. [08-security-notes.md](08-security-notes.md) - Security considerations
-12. [../blog/posts/kafka-spark-brokerage-killswitch.md](../blog/posts/kafka-spark-brokerage-killswitch.md) - Blog post with regulatory context
+12. [../blog/posts/sec-15c3-5-market-access-controls.md](../blog/posts/sec-15c3-5-market-access-controls.md) - Blog post with regulatory context
 
 ## Documentation Structure
 

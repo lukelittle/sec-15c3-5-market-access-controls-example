@@ -339,7 +339,7 @@ aws ce get-cost-and-usage \
 
 # Check for orphaned resources
 aws resourcegroupstaggingapi get-resources \
-  --tag-filters Key=Project,Values=streaming-risk-controls
+  --tag-filters Key=Project,Values=sec-15c3-5-market-access-controls
 
 # Destroy infrastructure
 cd terraform/envs/dev
