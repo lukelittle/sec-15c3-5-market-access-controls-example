@@ -162,7 +162,7 @@ Comprehensive guides are available in the `docs/` directory:
 
 ## Blog Post
 
-Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS (SEC Rule 15c3-5)](blog/posts/sec-15c3-5-market-access-controls.md)
+Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS (SEC Rule 15c3-5)](https://lukelittle.com/posts/2026/02/designing-pre-trade-risk-controls-on-aws-sec-rule-15c3-5/)
 
 ## Repository Structure
 
