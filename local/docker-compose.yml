@@ -34,6 +34,25 @@ services:
       timeout: 5s
       retries: 5
 
+  # Topic Creator (runs once to create topics)
+  topic-creator:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: topic-creator
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic orders.v1 --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic risk_signals.v1 --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic killswitch.commands.v1 --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic killswitch.state.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=compact --config min.cleanable.dirty.ratio=0.01 --config segment.ms=60000 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic orders.gated.v1 --partitions 3 --replication-factor 1 &&
+        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic audit.v1 --partitions 3 --replication-factor 1 &&
+        echo 'Topics created successfully'
+      "
+    restart: "no"
+
   # AKHQ - Kafka UI
   akhq:
     image: tchiotludo/akhq:latest
@@ -59,10 +78,14 @@ services:
     container_name: order-generator
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MODE: normal
+      RATE_PER_SECOND: "5"
     depends_on:
       kafka:
         condition: service_healthy
-    command: ["python", "generate_local.py"]
+      topic-creator:
+        condition: service_completed_successfully
+    command: ["python", "-u", "generate_local.py"]
 
   # Kill Switch Aggregator (local version)
   killswitch-aggregator:
@@ -75,7 +98,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    command: ["python", "aggregate_local.py"]
+      topic-creator:
+        condition: service_completed_successfully
+    command: ["python", "-u", "aggregate_local.py"]
 
   # Order Router (local version)
   order-router:
@@ -88,7 +113,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    command: ["python", "route_local.py"]
+      topic-creator:
+        condition: service_completed_successfully
+    command: ["python", "-u", "route_local.py"]
 
   # Operator Console API (local version)
   operator-console:
@@ -103,26 +130,28 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-    command: ["python", "api_local.py"]
+      topic-creator:
+        condition: service_completed_successfully
+    command: ["python", "-u", "api_local.py"]
 
-  # Topic Creator (runs once to create topics)
-  topic-creator:
-    image: confluentinc/cp-kafka:7.5.0
-    container_name: topic-creator
+  # Spark Risk Detector (local version)
+  spark-risk-detector:
+    build:
+      context: ../spark/risk_job
+      dockerfile: Dockerfile.local
+    container_name: spark-risk-detector
+    environment:
+      SPARK_MODE: master
     depends_on:
       kafka:
         condition: service_healthy
+      topic-creator:
+        condition: service_completed_successfully
     command: >
-      bash -c "
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic orders.v1 --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic risk_signals.v1 --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic killswitch.commands.v1 --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic killswitch.state.v1 --partitions 3 --replication-factor 1 --config cleanup.policy=compact --config min.cleanable.dirty.ratio=0.01 --config segment.ms=60000 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic orders.gated.v1 --partitions 3 --replication-factor 1 &&
-        kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic audit.v1 --partitions 3 --replication-factor 1 &&
-        echo 'Topics created successfully'
-      "
-    restart: "no"
+      /opt/spark/bin/spark-submit
+        --master local[2]
+        --jars /opt/spark-jars/spark-sql-kafka-0-10_2.12-3.4.0.jar,/opt/spark-jars/kafka-clients-3.4.0.jar,/opt/spark-jars/spark-token-provider-kafka-0-10_2.12-3.4.0.jar,/opt/spark-jars/commons-pool2-2.12.0.jar
+        /opt/spark/work-dir/risk_detector_local.py kafka:29092 100 1000000 0.7
 
 volumes:
   kafka-data:

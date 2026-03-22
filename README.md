@@ -1,252 +1,173 @@
-# SEC Rule 15c3-5 Market Access Controls Example
+# SEC Rule 15c3-5: Market Access Controls
 
-**A hands-on demonstration of pre-trade risk controls using Apache Kafka and Apache Spark**
+On August 1, 2012, Knight Capital deployed untested trading software to production. Within 45 minutes, a runaway algorithm executed millions of erroneous trades. There was no centralized kill switch. No way to stop all servers at once. By the time they pulled the plug, Knight had lost $440 million — more than the company's entire market cap. They were acquired at a fire-sale price six months later.
 
-## Overview
+This project builds the system that could have prevented that outcome.
 
-This project demonstrates how to build a serverless streaming risk control system that meets SEC Rule 15c3-5 requirements for broker-dealer market access. You'll deploy a complete event-driven architecture on AWS that detects risky trading patterns in real-time using Spark SQL, enforces kill switches through Kafka's compacted topics, and maintains a full audit trail.
+## What This Is
 
-The demo connects regulatory requirements to concrete architectural patterns, drawing lessons from the Knight Capital incident of 2012 where the lack of centralized control mechanisms led to $440 million in losses in 45 minutes.
+A complete, working implementation of real-time market access controls as required by SEC Rule 15c3-5. Orders flow through the system. A Spark Structured Streaming job watches for anomalies in 60-second windows. When thresholds are breached, a kill switch automatically blocks the offending account. A human operator must explicitly review and restore access. Every decision is audited.
+
+The same architectural patterns shown here — streaming analytics, event-driven microservices, kill switches, audit trails — are used across industries wherever systems need to detect anomalies and act on them in real time: fraud detection, infrastructure monitoring, IoT alerting, content moderation, and more.
+
+## Why This Matters for Your Career
+
+The technologies in this project are not academic exercises. They are the tools companies are hiring for right now:
+
+- **Kafka** is the backbone of real-time data at LinkedIn, Netflix, Uber, and most major banks
+- **Spark Streaming** powers fraud detection at Capital One, risk analytics at Goldman Sachs, and recommendation engines at Pinterest
+- **AWS managed services** (MSK, EMR, Lambda) are how teams ship these systems without managing infrastructure
+- **Infrastructure as Code** (Terraform) is a baseline expectation for cloud engineering roles
+- **Event-driven architecture** is the dominant pattern for building systems that scale
+
+If you can build, deploy, and reason about a system like this one, you can walk into an interview for a data engineer, platform engineer, or cloud architect role and speak from experience.
 
 ## Architecture
 
-![Architecture Diagram](designing-pre-trade-risk-controls-on-aws.png)
+```
+                    ┌─────────────────┐
+                    │ Order Generator  │
+                    │   (Lambda/Local) │
+                    └────────┬────────┘
+                             │
+                             ▼
+                      ┌─────────────┐
+                      │  orders.v1  │ ◄── Kafka Topic
+                      └──────┬──────┘
+                             │
+                ┌────────────┼────────────┐
+                │                         │
+                ▼                         ▼
+    ┌───────────────────┐     ┌───────────────────┐
+    │   Spark Streaming │     │   Order Router     │
+    │   Risk Detector   │     │   (Lambda/Local)   │
+    └────────┬──────────┘     └──┬──────────┬──────┘
+             │                   │          │
+             ▼                   ▼          ▼
+  ┌──────────────────────┐  ┌────────┐  ┌─────────┐
+  │killswitch.commands.v1│  │gated.v1│  │audit.v1 │
+  └──────────┬───────────┘  └────────┘  └─────────┘
+             │
+             ▼
+  ┌───────────────────────┐
+  │ Kill Switch Aggregator│
+  │   (Lambda/Local)      │
+  └──────────┬────────────┘
+             │
+             ▼
+  ┌──────────────────────┐     ┌───────────────────┐
+  │killswitch.state.v1   │◄────│ Operator Console  │
+  │   (compacted)        │     │ POST /kill /unkill │
+  └──────────────────────┘     └───────────────────┘
+```
 
-The system implements a separation of concerns between detection, control, and enforcement:
-
-- **Detection Layer**: Spark Structured Streaming analyzes order patterns using SQL windows to compute risk signals
-- **Control Plane**: Kafka compacted topics maintain authoritative kill switch state with full audit history
-- **Enforcement Layer**: Order router validates every order against current kill state before routing
-- **Audit Trail**: Immutable Kafka logs and DynamoDB indexes provide complete traceability
-
-## Key Concepts
-
-### Control Plane vs Data Plane
-
-The architecture separates control from data flow:
-
-- **Control Plane**: Operator console and kill switch aggregator manage authoritative kill state
-- **Data Plane**: Order router enforces kill state on every order in real-time
-- **Detection**: Spark analyzes patterns and suggests actions, but doesn't directly enforce
-
-This separation ensures consistent enforcement even if detection systems fail or are delayed.
-
-### Kafka Compaction for Kill State
-
-The `killswitch.state.v1` topic uses Kafka's log compaction to maintain the latest kill status per scope (GLOBAL, ACCOUNT:xxx, SYMBOL:xxx):
-
-- **Single source of truth**: Latest state is always available to all consumers
-- **Replayability**: New services can bootstrap current state by reading the entire topic
-- **Auditability**: Commands topic retains full history of all state changes
-
-### Regulatory Context
-
-Real broker-dealers must comply with SEC Rule 15c3-5 (Market Access Rule), which requires:
-
-- Pre-trade risk controls to prevent erroneous orders
-- "Direct and exclusive control" over market access
-- Supervisory procedures and audit trails
-
-This demo implements these patterns using modern streaming architecture:
-
-- **Direct control**: Centralized kill switch with authoritative state
-- **Real-time enforcement**: Every order checked before routing
-- **Audit trail**: Immutable log of all decisions with correlation IDs
+**Detection** (Spark) is separate from **Enforcement** (Order Router) is separate from **Control** (Operator Console). Kafka is the backbone connecting all three.
 
 ## Quick Start
 
-### AWS Deployment (30 minutes)
-
-**Prerequisites:**
-- AWS account with appropriate permissions
-- AWS CLI configured
-- Terraform 1.6 or later
-- Python 3.11 or later
-- Docker
-
-**Deploy:**
-
-```bash
-# Build Lambda packages
-make build
-
-# Deploy infrastructure
-cd terraform/envs/dev
-terraform init
-terraform apply
-
-# Create Kafka topics
-export MSK_BOOTSTRAP=$(terraform output -raw msk_bootstrap_brokers)
-cd ../../..
-./tools/create-topics.sh
-
-# Deploy Spark job
-./tools/deploy-spark-job.sh
-```
-
-### Local Development (5 minutes)
-
-For quick iteration without AWS costs:
+### Local Development (Free, 2 minutes)
 
 ```bash
 cd local
-docker-compose up -d
-
-# Access AKHQ UI at http://localhost:8080
+docker compose up --build -d
 ```
 
-## Running the Demo
+This starts Kafka, all four services, the Spark risk detector, and a Kafka UI. No AWS account needed.
 
-### Normal Operation
+- **AKHQ** (Kafka UI): http://localhost:8080
+- **Operator Console**: http://localhost:8000
+
+Test it:
 
 ```bash
-# Start order generator (normal mode)
-aws lambda invoke --function-name sec-15c3-5-dev-order-generator \
-  --payload '{"mode": "normal", "duration_seconds": 300}' \
-  response.json
+# Check the system is running
+curl http://localhost:8000/health
 
-# Watch orders flowing
-./tools/tail-topic.sh orders.v1
+# Manually kill an account
+curl -X POST http://localhost:8000/kill \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":"ACCOUNT:12345","reason":"suspicious activity"}'
+
+# Watch orders get dropped
+docker compose logs order-router --tail 20
+
+# Unkill the account
+curl -X POST http://localhost:8000/unkill \
+  -H 'Content-Type: application/json' \
+  -d '{"scope":"ACCOUNT:12345","reason":"cleared after review"}'
 ```
 
-### Trigger Kill Switch
+### AWS Deployment ($4-6/hour)
+
+See [AWS Deployment Guide](docs/03-deploy-aws.md) for full instructions.
 
 ```bash
-# Trigger panic mode (high order rate)
-aws lambda invoke --function-name sec-15c3-5-dev-order-generator \
-  --payload '{"mode": "panic", "account_id": "12345", "duration_seconds": 60}' \
-  response.json
-
-# Watch Spark detect breach and emit kill command
-./tools/tail-topic.sh killswitch.commands.v1
-
-# Verify orders are dropped
-./tools/tail-topic.sh audit.v1
-```
-
-### Manual Recovery
-
-```bash
-# Operator unkills via console
-export API_URL=$(cd terraform/envs/dev && terraform output -raw operator_console_url)
-curl -X POST $API_URL/unkill \
-  -H "Content-Type: application/json" \
-  -d '{"scope": "ACCOUNT:12345", "reason": "Manual override after review"}'
-```
-
-## Testing
-
-Run integration tests to verify the system works:
-
-```bash
-# Test AWS deployment
-./tests/integration/test_demo_flow.sh
-
-# Test local Docker setup
-./tests/integration/test_local_stack.sh
+make build
+cd terraform/envs/dev
+terraform init && terraform apply
 ```
 
 ## Documentation
 
-Comprehensive guides are available in the `docs/` directory:
+| Document | Description |
+|----------|-------------|
+| [Architecture Overview](docs/00-overview.md) | System design, data flow, Kafka topics, kill switch mechanics |
+| [Prerequisites](docs/01-prereqs.md) | What you need installed for local and AWS |
+| [Local Development](docs/02-local-development.md) | Docker Compose setup, testing, troubleshooting |
+| [AWS Deployment](docs/03-deploy-aws.md) | Terraform deployment, MSK, EMR, Lambda setup |
+| [Presentation Guide](docs/04-presentation-guide.md) | 30-45 minute talk outline with speaker notes |
+| [Demo Script](docs/05-run-demo.md) | Step-by-step demo for live presentation |
+| [Observability](docs/06-observe.md) | Monitoring, log queries, tracing |
+| [Exercises](docs/07-exercises.md) | 10 student exercises from beginner to advanced |
+| [Cost and Cleanup](docs/08-cost-and-cleanup.md) | AWS cost breakdown and cleanup procedures |
+| [Troubleshooting](docs/09-troubleshooting.md) | Common issues and solutions |
+| [Security Notes](docs/10-security-notes.md) | What's production-ready and what's not |
 
-- [Architecture Overview](docs/00-overview.md) - Deep dive into system design
-- [Prerequisites](docs/01-prereqs.md) - Setup requirements
-- [AWS Deployment](docs/02-deploy-aws.md) - Step-by-step deployment guide
-- [Demo Script](docs/03-run-demo.md) - 10-12 minute classroom demo
-- [Observability](docs/04-observe.md) - Monitoring and debugging
-- [Exercises](docs/05-exercises.md) - Hands-on learning exercises
-- [Troubleshooting](docs/06-troubleshooting.md) - Common issues and solutions
-- [Cost Management](docs/07-cost-and-cleanup.md) - Cost optimization and cleanup
-- [Security Notes](docs/08-security-notes.md) - Security considerations
+## Cost
 
-## Blog Post
+| Environment | Cost | Best For |
+|-------------|------|----------|
+| **Local** (Docker Compose) | **$0** | Development, testing, classroom demos |
+| **AWS** (1-hour demo) | ~$5 | Showing real cloud services |
+| **AWS** (full-day workshop) | ~$35 | Extended hands-on sessions |
 
-Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS (SEC Rule 15c3-5)](https://lukelittle.com/posts/2026/02/designing-pre-trade-risk-controls-on-aws-sec-rule-15c3-5/)
+Deploy right before you need it, `terraform destroy` right after. See [Cost and Cleanup](docs/08-cost-and-cleanup.md) for a detailed per-service breakdown.
 
 ## Repository Structure
 
 ```
 .
-├── terraform/              # Infrastructure as Code
-│   ├── modules/           # Reusable Terraform modules
-│   └── envs/dev/          # Development environment
-├── services/              # Lambda functions
-│   ├── order_generator/
-│   ├── killswitch_aggregator/
-│   ├── order_router/
-│   └── operator_console/
-├── spark/                 # PySpark streaming job
+├── services/                  # Python services (Lambda handlers + local versions)
+│   ├── order_generator/       # Produces synthetic orders
+│   ├── killswitch_aggregator/ # Maintains kill switch state
+│   ├── order_router/          # Enforces kill switch on every order
+│   └── operator_console/      # REST API for manual control
+├── spark/                     # PySpark streaming risk detector
 │   └── risk_job/
-├── local/                 # Docker Compose for local dev
-├── tools/                 # Helper scripts
-├── docs/                  # Workshop documentation
-├── tests/                 # Integration tests
-└── blog/                  # Blog post content
+├── local/                     # Docker Compose for local development
+│   └── docker-compose.yml
+├── terraform/                 # Infrastructure as Code
+│   ├── modules/               # Reusable Terraform modules
+│   └── envs/dev/              # Development environment
+├── tools/                     # Helper scripts
+├── docs/                      # Full documentation
+├── tests/                     # Integration tests
+└── blog/                      # Blog post content
 ```
 
-## Cost Estimates
+## Blog Post
 
-Typical costs for running the demo:
+Read the full context and motivation: [Designing Pre-Trade Risk Controls on AWS (SEC Rule 15c3-5)](https://lukelittle.com/posts/2026/02/designing-pre-trade-risk-controls-on-aws-sec-rule-15c3-5/)
 
-- **1-hour demo**: $4-6
-- **Full-day workshop**: $30-45
-- **Local development**: $0
+## Educational Context
 
-Cost breakdown:
-- MSK Serverless: $2-3/hour
-- EMR Serverless: $1-2/hour
-- Lambda: $0.50/hour (mostly free tier)
-- Other services: $0.50/hour
+Built for ITCS 6190/8190 (Cloud Computing for Data Analysis) at UNC Charlotte. The system ties together concepts students encounter throughout the course:
 
-See [Cost Management](docs/07-cost-and-cleanup.md) for optimization strategies.
-
-## Cleanup
-
-Always destroy infrastructure after use to avoid charges:
-
-```bash
-cd terraform/envs/dev
-terraform destroy
-
-# Verify no resources remain
-aws resourcegroupstaggingapi get-resources \
-  --tag-filters Key=Project,Values=sec-15c3-5-market-access-controls
-```
-
-## Security Disclaimer
-
-This is an educational demonstration, not production trading software:
-
-- Uses synthetic data only
-- No real brokerage connectivity
-- Simplified security model for learning
-- Not intended for actual trading decisions
-
-For production use, additional controls are required:
-- Encryption at rest and in transit
-- Comprehensive authentication and authorization
-- Rate limiting and DDoS protection
-- Security scanning and penetration testing
-- Disaster recovery procedures
-- Compliance certifications
-
-See [Security Notes](docs/08-security-notes.md) for detailed discussion.
-
-## Learning Objectives
-
-This project teaches:
-
-- Event-driven architecture with Kafka
-- Stream processing with Spark SQL
-- Serverless deployment with Terraform
-- Regulatory compliance patterns
-- Operational patterns (audit trails, correlation IDs, idempotency)
-- Real-world incident analysis
-
-## Acknowledgments
-
-Built for data and cloud computing education at UNC Charlotte. Inspired by SEC Rule 15c3-5 market access requirements and lessons learned from the Knight Capital incident (2012).
+- **Spark Structured Streaming** -- windowed aggregations, watermarks, checkpoints
+- **Kafka** -- topics, consumer groups, log compaction, partitioning
+- **AWS Managed Services** -- MSK, EMR Serverless, Lambda, DynamoDB, API Gateway
+- **Event-Driven Architecture** -- separation of concerns, audit trails, correlation IDs
+- **Infrastructure as Code** -- Terraform modules, least-privilege IAM
 
 ## Contributing
 
@@ -254,6 +175,6 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
-Educational use disclaimer: This software is provided for educational purposes only and should not be used in production trading systems without extensive additional development, testing, and regulatory review.
+This software is provided for educational purposes only and should not be used in production trading systems without extensive additional development, testing, and regulatory review.
