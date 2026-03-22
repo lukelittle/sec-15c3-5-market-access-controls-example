@@ -11,10 +11,10 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
     col, window, count, sum as spark_sum, avg, max as spark_max,
     from_json, to_json, struct, lit, current_timestamp, unix_timestamp,
-    concat, when
+    concat, when, approx_count_distinct, udf, collect_list
 )
 from pyspark.sql.types import (
-    StructType, StructField, StringType, LongType, IntegerType, DoubleType
+    StructType, StructField, StringType, LongType, IntegerType, DoubleType, FloatType
 )
 
 # Configuration from args
@@ -63,56 +63,41 @@ def read_orders_stream(spark):
         .withColumn("notional", col("qty") * col("price")) \
         .withColumn("event_time", (col("ts") / 1000).cast("timestamp"))
 
+@udf(FloatType())
+def compute_concentration(symbols):
+    """Compute top symbol concentration from collected symbol list."""
+    if not symbols:
+        return 0.0
+    from collections import Counter
+    counts = Counter(symbols)
+    most_common_count = counts.most_common(1)[0][1]
+    return float(most_common_count) / float(len(symbols))
+
 def compute_risk_signals(orders_df):
-    """Compute risk signals using Spark SQL - 60-second tumbling windows per account"""
-    orders_df.createOrReplaceTempView("orders")
-
-    risk_signals_sql = """
-        SELECT
-            window.start as window_start,
-            window.end as window_end,
-            account_id,
-            COUNT(*) as order_count,
-            SUM(notional) as total_notional,
-            AVG(notional) as avg_notional,
-            COUNT(DISTINCT symbol) as unique_symbols,
-            MAX(symbol) as top_symbol,
-            CAST(unix_timestamp(current_timestamp()) * 1000 AS BIGINT) as ts
-        FROM orders
-        GROUP BY
-            window(event_time, '60 seconds'),
-            account_id
     """
-
-    spark = orders_df.sparkSession
-    risk_signals = spark.sql(risk_signals_sql)
-
-    symbol_counts = orders_df \
+    Compute risk signals using DataFrame API - single aggregation pass.
+    Uses 60-second tumbling windows per account.
+    Avoids stream-stream joins by collecting symbols and computing concentration in a UDF.
+    """
+    return orders_df \
+        .withWatermark("event_time", "60 seconds") \
         .groupBy(
             window(col("event_time"), "60 seconds"),
-            col("account_id"),
-            col("symbol")
+            col("account_id")
         ) \
-        .agg(count("*").alias("symbol_count"))
-
-    symbol_counts.createOrReplaceTempView("symbol_counts")
-    risk_signals.createOrReplaceTempView("risk_signals")
-
-    enriched_signals_sql = """
-        SELECT
-            r.*,
-            COALESCE(MAX(sc.symbol_count) / r.order_count, 0.0) as top_symbol_share
-        FROM risk_signals r
-        LEFT JOIN symbol_counts sc
-            ON r.window_start = sc.window.start
-            AND r.account_id = sc.account_id
-        GROUP BY
-            r.window_start, r.window_end, r.account_id,
-            r.order_count, r.total_notional, r.avg_notional,
-            r.unique_symbols, r.top_symbol, r.ts
-    """
-
-    return spark.sql(enriched_signals_sql)
+        .agg(
+            count("*").alias("order_count"),
+            spark_sum("notional").alias("total_notional"),
+            avg("notional").alias("avg_notional"),
+            approx_count_distinct("symbol").alias("unique_symbols"),
+            spark_max("symbol").alias("top_symbol"),
+            collect_list("symbol").alias("_symbols")
+        ) \
+        .withColumn("window_start", col("window.start")) \
+        .withColumn("window_end", col("window.end")) \
+        .withColumn("ts", (unix_timestamp(current_timestamp()) * lit(1000)).cast("long")) \
+        .withColumn("top_symbol_share", compute_concentration(col("_symbols"))) \
+        .drop("window", "_symbols")
 
 def detect_threshold_breaches(risk_signals_df):
     """Detect threshold breaches and generate kill commands"""
@@ -214,15 +199,20 @@ def main():
     signals_query = write_risk_signals(risk_signals_df)
     commands_query = write_kill_commands(kill_commands_df)
 
-    console_query = risk_signals_df \
-        .writeStream \
-        .format("console") \
-        .outputMode("update") \
-        .option("truncate", False) \
-        .start()
+    print("Streaming queries started. Monitoring for failures...")
 
-    print("Streaming queries started. Waiting for termination...")
-    spark.streams.awaitAnyTermination()
+    # Monitor queries and restart on transient failures
+    import time as _time
+    while True:
+        _time.sleep(10)
+        for q in spark.streams.active:
+            if q.exception():
+                print(f"Query {q.name} failed: {q.exception()}")
+        if not spark.streams.active:
+            print("All queries terminated. Restarting...")
+            signals_query = write_risk_signals(risk_signals_df)
+            commands_query = write_kill_commands(kill_commands_df)
+            print("Queries restarted.")
 
 if __name__ == "__main__":
     main()
