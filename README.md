@@ -24,44 +24,13 @@ If you can build, deploy, and reason about a system like this one, you can walk 
 
 ## Architecture
 
-```
-                    ┌─────────────────┐
-                    │ Order Generator  │
-                    │   (Lambda/Local) │
-                    └────────┬────────┘
-                             │
-                             ▼
-                      ┌─────────────┐
-                      │  orders.v1  │ ◄── Kafka Topic
-                      └──────┬──────┘
-                             │
-                ┌────────────┼────────────┐
-                │                         │
-                ▼                         ▼
-    ┌───────────────────┐     ┌───────────────────┐
-    │   Spark Streaming │     │   Order Router     │
-    │   Risk Detector   │     │   (Lambda/Local)   │
-    └────────┬──────────┘     └──┬──────────┬──────┘
-             │                   │          │
-             ▼                   ▼          ▼
-  ┌──────────────────────┐  ┌────────┐  ┌─────────┐
-  │killswitch.commands.v1│  │gated.v1│  │audit.v1 │
-  └──────────┬───────────┘  └────────┘  └─────────┘
-             │
-             ▼
-  ┌───────────────────────┐
-  │ Kill Switch Aggregator│
-  │   (Lambda/Local)      │
-  └──────────┬────────────┘
-             │
-             ▼
-  ┌──────────────────────┐     ┌───────────────────┐
-  │killswitch.state.v1   │◄────│ Operator Console  │
-  │   (compacted)        │     │ POST /kill /unkill │
-  └──────────────────────┘     └───────────────────┘
-```
+![Architecture Diagram](designing-pre-trade-risk-controls-on-aws.png)
 
-**Detection** (Spark) is separate from **Enforcement** (Order Router) is separate from **Control** (Operator Console). Kafka is the backbone connecting all three.
+The system separates three concerns:
+
+- **Risk Detection** (top) — EMR Serverless runs a Spark Structured Streaming job that consumes orders, computes 60-second windowed risk signals, and emits kill commands when thresholds are breached.
+- **Data Plane** (middle) — Amazon MSK Serverless is the event backbone. The Order Generator publishes orders. The Order Router consumes them, checks kill switch state, and either forwards (allowed) or drops (killed) each order. Every decision is written to the audit topic and DynamoDB.
+- **Control Plane** (bottom) — The Operator Console (API Gateway + Lambda) provides manual kill/unkill control. The Kill Switch Aggregator maintains authoritative state on a compacted Kafka topic.
 
 ## Quick Start
 
@@ -115,13 +84,15 @@ terraform init && terraform apply
 | [Prerequisites](docs/01-prereqs.md) | What you need installed for local and AWS |
 | [Local Development](docs/02-local-development.md) | Docker Compose setup, testing, troubleshooting |
 | [AWS Deployment](docs/03-deploy-aws.md) | Terraform deployment, MSK, EMR, Lambda setup |
-| [Presentation Guide](docs/04-presentation-guide.md) | 30-45 minute talk outline with speaker notes |
 | [Demo Script](docs/05-run-demo.md) | Step-by-step demo for live presentation |
 | [Observability](docs/06-observe.md) | Monitoring, log queries, tracing |
-| [Exercises](docs/07-exercises.md) | 10 student exercises from beginner to advanced |
 | [Cost and Cleanup](docs/08-cost-and-cleanup.md) | AWS cost breakdown and cleanup procedures |
 | [Troubleshooting](docs/09-troubleshooting.md) | Common issues and solutions |
 | [Security Notes](docs/10-security-notes.md) | What's production-ready and what's not |
+| **Presentation** | |
+| [Speaker Script](presentation/SCRIPT.md) | Full talk script with timing, speaker notes, and commands |
+| [Student Exercises](presentation/EXERCISES.md) | 10 hands-on exercises (local Docker, no AWS) |
+| [Slide Deck](docs/presentation.pptx) | 15-slide PowerPoint (dark navy theme) |
 
 ## Cost
 
@@ -149,6 +120,7 @@ Deploy right before you need it, `terraform destroy` right after. See [Cost and 
 ├── terraform/                 # Infrastructure as Code
 │   ├── modules/               # Reusable Terraform modules
 │   └── envs/dev/              # Development environment
+├── presentation/              # Talk script, exercises, slide deck
 ├── tools/                     # Helper scripts
 ├── docs/                      # Full documentation
 ├── tests/                     # Integration tests

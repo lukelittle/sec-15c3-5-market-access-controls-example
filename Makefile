@@ -34,7 +34,7 @@ deploy:
 	@echo "Next steps:"
 	@echo "  1. Create Kafka topics: ./tools/create-topics.sh"
 	@echo "  2. Deploy Spark job: ./tools/deploy-spark-job.sh"
-	@echo "  3. Run demo: see docs/03-run-demo.md"
+	@echo "  3. Run demo: see docs/05-run-demo.md"
 
 destroy:
 	@echo "Destroying AWS infrastructure..."
