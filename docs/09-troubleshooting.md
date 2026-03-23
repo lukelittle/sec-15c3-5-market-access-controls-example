@@ -510,7 +510,7 @@ cd services/order_generator
 
 - Review [00-overview.md](00-overview.md) for architecture
 - Check [02-deploy-aws.md](02-deploy-aws.md) for deployment steps
-- Read [08-security-notes.md](08-security-notes.md) for security issues
+- Read [10-security-notes.md](10-security-notes.md) for security issues
 - Open a GitHub Issue with:
   - Error message
   - CloudWatch logs

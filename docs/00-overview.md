@@ -339,5 +339,5 @@ Pre-built dashboard showing:
 
 - [01-prereqs.md](01-prereqs.md): Setup requirements
 - [02-deploy-aws.md](02-deploy-aws.md): Deploy to AWS
-- [03-run-demo.md](03-run-demo.md): Run the demo
-- [04-observe.md](04-observe.md): Observability guide
+- [05-run-demo.md](05-run-demo.md): Run the demo
+- [06-observe.md](06-observe.md): Observability guide

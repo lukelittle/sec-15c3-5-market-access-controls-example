@@ -308,7 +308,7 @@ For each exercise:
 
 ## Getting Help
 
-- Review [06-troubleshooting.md](06-troubleshooting.md)
+- Review [09-troubleshooting.md](09-troubleshooting.md)
 - Check CloudWatch logs
 - Use `./tools/tail-topic.sh` to debug
 - Ask in class discussion forum

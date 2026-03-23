@@ -446,6 +446,6 @@ aws cloudwatch put-metric-alarm \
 
 ## Next Steps
 
-- [05-exercises.md](05-exercises.md): Build monitoring dashboard
-- [06-troubleshooting.md](06-troubleshooting.md): Debug common issues
-- [08-security-notes.md](08-security-notes.md): Security monitoring
+- [07-exercises.md](07-exercises.md): Build monitoring dashboard
+- [09-troubleshooting.md](09-troubleshooting.md): Debug common issues
+- [10-security-notes.md](10-security-notes.md): Security monitoring
