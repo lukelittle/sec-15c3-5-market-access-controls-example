@@ -186,5 +186,5 @@ make --version
 ## Next Steps
 
 Once prerequisites are met:
-- [02-deploy-aws.md](02-deploy-aws.md): Deploy to AWS
-- [02-deploy-local.md](02-deploy-local.md): Run locally with Docker Compose
+- [03-deploy-aws.md](03-deploy-aws.md): Deploy to AWS
+- [02-local-development.md](02-local-development.md): Run locally with Docker Compose

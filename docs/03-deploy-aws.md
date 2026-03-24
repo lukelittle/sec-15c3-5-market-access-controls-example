@@ -212,8 +212,8 @@ aws logs tail /aws/lambda/streaming-risk-dev-order-generator --follow
 Your streaming risk control system is now running on AWS.
 
 **Next steps**:
-- [05-run-demo.md](05-run-demo.md): Run the live demo
-- [06-observe.md](06-observe.md): Observability and monitoring
+- [04-run-demo.md](04-run-demo.md): Run the live demo
+- [05-observe.md](05-observe.md): Observability and monitoring
 - [CloudWatch Dashboard](https://console.aws.amazon.com/cloudwatch/home#dashboards:): View metrics
 
 ## Troubleshooting
@@ -309,6 +309,6 @@ Costs scale with:
 
 ## Next Steps
 
-- [05-run-demo.md](05-run-demo.md): Run the demo script
-- [07-exercises.md](07-exercises.md): Student exercises
-- [08-cost-and-cleanup.md](08-cost-and-cleanup.md): Detailed cost management
+- [04-run-demo.md](04-run-demo.md): Run the demo
+- [06-exercises.md](06-exercises.md): Student exercises
+- [07-cost-and-cleanup.md](07-cost-and-cleanup.md): Detailed cost management

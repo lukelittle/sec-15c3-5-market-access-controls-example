@@ -509,8 +509,8 @@ cd services/order_generator
 ## Still Stuck?
 
 - Review [00-overview.md](00-overview.md) for architecture
-- Check [02-deploy-aws.md](02-deploy-aws.md) for deployment steps
-- Read [10-security-notes.md](10-security-notes.md) for security issues
+- Check [03-deploy-aws.md](03-deploy-aws.md) for deployment steps
+- Read [09-security-notes.md](09-security-notes.md) for security issues
 - Open a GitHub Issue with:
   - Error message
   - CloudWatch logs

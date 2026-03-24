@@ -84,15 +84,12 @@ terraform init && terraform apply
 | [Prerequisites](docs/01-prereqs.md) | What you need installed for local and AWS |
 | [Local Development](docs/02-local-development.md) | Docker Compose setup, testing, troubleshooting |
 | [AWS Deployment](docs/03-deploy-aws.md) | Terraform deployment, MSK, EMR, Lambda setup |
-| [Demo Script](docs/05-run-demo.md) | Step-by-step demo for live presentation |
-| [Observability](docs/06-observe.md) | Monitoring, log queries, tracing |
-| [Cost and Cleanup](docs/08-cost-and-cleanup.md) | AWS cost breakdown and cleanup procedures |
-| [Troubleshooting](docs/09-troubleshooting.md) | Common issues and solutions |
-| [Security Notes](docs/10-security-notes.md) | What's production-ready and what's not |
-| **Presentation** | |
-| [Speaker Script](presentation/SCRIPT.md) | Full talk script with timing, speaker notes, and commands |
-| [Student Exercises](presentation/EXERCISES.md) | 10 hands-on exercises (local Docker, no AWS) |
-| [Slide Deck](docs/presentation.pptx) | 15-slide PowerPoint (dark navy theme) |
+| [Running the Demo](docs/04-run-demo.md) | Step-by-step walkthrough of the live system |
+| [Observability](docs/05-observe.md) | Monitoring, log queries, tracing |
+| [Exercises](docs/06-exercises.md) | 10 hands-on exercises (local Docker, no AWS required) |
+| [Cost and Cleanup](docs/07-cost-and-cleanup.md) | AWS cost breakdown and cleanup procedures |
+| [Troubleshooting](docs/08-troubleshooting.md) | Common issues and solutions |
+| [Security Notes](docs/09-security-notes.md) | What's production-ready and what's not |
 
 ## Cost
 
@@ -102,7 +99,7 @@ terraform init && terraform apply
 | **AWS** (1-hour demo) | ~$5 | Showing real cloud services |
 | **AWS** (full-day workshop) | ~$35 | Extended hands-on sessions |
 
-Deploy right before you need it, `terraform destroy` right after. See [Cost and Cleanup](docs/08-cost-and-cleanup.md) for a detailed per-service breakdown.
+Deploy right before you need it, `terraform destroy` right after. See [Cost and Cleanup](docs/07-cost-and-cleanup.md) for a detailed per-service breakdown.
 
 ## Repository Structure
 
@@ -120,7 +117,6 @@ Deploy right before you need it, `terraform destroy` right after. See [Cost and 
 ├── terraform/                 # Infrastructure as Code
 │   ├── modules/               # Reusable Terraform modules
 │   └── envs/dev/              # Development environment
-├── presentation/              # Talk script, exercises, slide deck
 ├── tools/                     # Helper scripts
 ├── docs/                      # Full documentation
 ├── tests/                     # Integration tests
