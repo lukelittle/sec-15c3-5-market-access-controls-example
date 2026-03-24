@@ -11,6 +11,8 @@ import time
 import uuid
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError
+from kafka.oauth.abstract import AbstractTokenProvider
+from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
 import boto3
 from collections import defaultdict
 
@@ -21,7 +23,8 @@ STATE_TOPIC = 'killswitch.state.v1'
 GATED_TOPIC = 'orders.gated.v1'
 AUDIT_TOPIC = 'audit.v1'
 DYNAMODB_AUDIT_TABLE = os.environ['DYNAMODB_AUDIT_TABLE']
-CONSUMER_GROUP = 'order-router'
+CONSUMER_GROUP = 'order-router-v2'
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 
 dynamodb = boto3.resource('dynamodb')
 audit_table = dynamodb.Table(DYNAMODB_AUDIT_TABLE)
@@ -29,19 +32,26 @@ audit_table = dynamodb.Table(DYNAMODB_AUDIT_TABLE)
 # In-memory kill state cache
 kill_state = {}
 
+class MSKTokenProvider(AbstractTokenProvider):
+    def token(self):
+        token, _ = MSKAuthTokenProvider.generate_auth_token(AWS_REGION)
+        return token
+
 def create_consumer(topics):
     """Create Kafka consumer with IAM auth"""
     return KafkaConsumer(
         *topics,
         bootstrap_servers=BOOTSTRAP_SERVERS.split(','),
         security_protocol='SASL_SSL',
-        sasl_mechanism='AWS_MSK_IAM',
-        sasl_oauth_token_provider=lambda: get_aws_iam_token(),
+        sasl_mechanism='OAUTHBEARER',
+        sasl_oauth_token_provider=MSKTokenProvider(),
         group_id=CONSUMER_GROUP,
         value_deserializer=lambda v: json.loads(v.decode('utf-8')),
         key_deserializer=lambda k: k.decode('utf-8') if k else None,
         auto_offset_reset='earliest',
-        enable_auto_commit=True
+        enable_auto_commit=True,
+        api_version=(2, 8, 0),
+        request_timeout_ms=15000
     )
 
 def create_producer():
@@ -49,68 +59,52 @@ def create_producer():
     return KafkaProducer(
         bootstrap_servers=BOOTSTRAP_SERVERS.split(','),
         security_protocol='SASL_SSL',
-        sasl_mechanism='AWS_MSK_IAM',
-        sasl_oauth_token_provider=lambda: get_aws_iam_token(),
+        sasl_mechanism='OAUTHBEARER',
+        sasl_oauth_token_provider=MSKTokenProvider(),
         value_serializer=lambda v: json.dumps(v).encode('utf-8'),
         key_serializer=lambda k: k.encode('utf-8') if k else None,
         acks='all',
-        retries=3
+        retries=3,
+        api_version=(2, 8, 0),
+        request_timeout_ms=15000,
+        max_block_ms=15000
     )
 
-def get_aws_iam_token():
-    """Get AWS IAM token for MSK authentication"""
-    import boto3
-    from botocore.auth import SigV4Auth
-    from botocore.awsrequest import AWSRequest
-    
-    session = boto3.Session()
-    credentials = session.get_credentials()
-    region = session.region_name or 'us-east-1'
-    
-    request = AWSRequest(
-        method='GET',
-        url=f'https://kafka.{region}.amazonaws.com/',
-        headers={'host': f'kafka.{region}.amazonaws.com'}
-    )
-    
-    SigV4Auth(credentials, 'kafka', region).add_auth(request)
-    return request.headers['Authorization']
-
-def load_kill_state(consumer):
+def load_kill_state():
     """
-    Bootstrap kill state from compacted topic
-    Read all messages to get latest state per scope
+    Bootstrap kill state from compacted topic using a separate consumer
+    with no group_id so it always reads from the beginning.
     """
     print("Loading kill state from compacted topic...")
-    
-    # Temporarily subscribe to state topic only
-    consumer.subscribe([STATE_TOPIC])
-    
-    # Poll until we've read all available messages
+
+    bootstrap_consumer = KafkaConsumer(
+        STATE_TOPIC,
+        bootstrap_servers=BOOTSTRAP_SERVERS.split(','),
+        security_protocol='SASL_SSL',
+        sasl_mechanism='OAUTHBEARER',
+        sasl_oauth_token_provider=MSKTokenProvider(),
+        group_id=None,
+        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+        key_deserializer=lambda k: k.decode('utf-8') if k else None,
+        auto_offset_reset='earliest',
+        api_version=(2, 8, 0),
+        request_timeout_ms=15000,
+        consumer_timeout_ms=5000
+    )
+
     state_count = 0
-    empty_polls = 0
-    max_empty_polls = 3
-    
-    while empty_polls < max_empty_polls:
-        records = consumer.poll(timeout_ms=1000, max_records=100)
-        
-        if not records:
-            empty_polls += 1
-            continue
-        
-        empty_polls = 0
-        
-        for topic_partition, messages in records.items():
-            for message in messages:
-                state = message.value
-                scope = state['scope']
-                kill_state[scope] = state
-                state_count += 1
-    
+    try:
+        for message in bootstrap_consumer:
+            state = message.value
+            scope = state['scope']
+            kill_state[scope] = state
+            state_count += 1
+    except StopIteration:
+        pass
+    finally:
+        bootstrap_consumer.close()
+
     print(f"Loaded {state_count} state records, {len(kill_state)} unique scopes")
-    
-    # Now subscribe to both topics
-    consumer.subscribe([ORDERS_TOPIC, STATE_TOPIC])
 
 def check_kill_status(order):
     """
@@ -213,11 +207,12 @@ def lambda_handler(event, context):
     """
     print("Starting order router...")
     
-    consumer = create_consumer([ORDERS_TOPIC, STATE_TOPIC])
     producer = create_producer()
-    
-    # Bootstrap kill state
-    load_kill_state(consumer)
+
+    # Bootstrap kill state from beginning of compacted topic
+    load_kill_state()
+
+    consumer = create_consumer([ORDERS_TOPIC, STATE_TOPIC])
     
     orders_processed = 0
     orders_allowed = 0

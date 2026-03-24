@@ -8,7 +8,7 @@ rm -rf package dist
 mkdir -p package dist
 
 # Install dependencies
-pip install -r requirements.txt -t package/
+pip3 install -r requirements.txt -t package/
 
 # Copy handler
 cp handler.py package/

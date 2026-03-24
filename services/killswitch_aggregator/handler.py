@@ -10,6 +10,8 @@ import time
 import uuid
 from kafka import KafkaConsumer, KafkaProducer
 from kafka.errors import KafkaError
+from kafka.oauth.abstract import AbstractTokenProvider
+from aws_msk_iam_sasl_signer import MSKAuthTokenProvider
 import boto3
 
 # Configuration
@@ -18,9 +20,15 @@ COMMANDS_TOPIC = 'killswitch.commands.v1'
 STATE_TOPIC = 'killswitch.state.v1'
 DYNAMODB_TABLE = os.environ['DYNAMODB_STATE_TABLE']
 CONSUMER_GROUP = 'killswitch-aggregator'
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(DYNAMODB_TABLE)
+
+class MSKTokenProvider(AbstractTokenProvider):
+    def token(self):
+        token, _ = MSKAuthTokenProvider.generate_auth_token(AWS_REGION)
+        return token
 
 def create_consumer():
     """Create Kafka consumer with IAM auth"""
@@ -28,13 +36,15 @@ def create_consumer():
         COMMANDS_TOPIC,
         bootstrap_servers=BOOTSTRAP_SERVERS.split(','),
         security_protocol='SASL_SSL',
-        sasl_mechanism='AWS_MSK_IAM',
-        sasl_oauth_token_provider=lambda: get_aws_iam_token(),
+        sasl_mechanism='OAUTHBEARER',
+        sasl_oauth_token_provider=MSKTokenProvider(),
         group_id=CONSUMER_GROUP,
         value_deserializer=lambda v: json.loads(v.decode('utf-8')),
         key_deserializer=lambda k: k.decode('utf-8') if k else None,
         auto_offset_reset='earliest',
-        enable_auto_commit=True
+        enable_auto_commit=True,
+        api_version=(2, 8, 0),
+        request_timeout_ms=15000
     )
 
 def create_producer():
@@ -42,32 +52,16 @@ def create_producer():
     return KafkaProducer(
         bootstrap_servers=BOOTSTRAP_SERVERS.split(','),
         security_protocol='SASL_SSL',
-        sasl_mechanism='AWS_MSK_IAM',
-        sasl_oauth_token_provider=lambda: get_aws_iam_token(),
+        sasl_mechanism='OAUTHBEARER',
+        sasl_oauth_token_provider=MSKTokenProvider(),
         value_serializer=lambda v: json.dumps(v).encode('utf-8'),
         key_serializer=lambda k: k.encode('utf-8') if k else None,
         acks='all',
-        retries=3
+        retries=3,
+        api_version=(2, 8, 0),
+        request_timeout_ms=15000,
+        max_block_ms=15000
     )
-
-def get_aws_iam_token():
-    """Get AWS IAM token for MSK authentication"""
-    import boto3
-    from botocore.auth import SigV4Auth
-    from botocore.awsrequest import AWSRequest
-    
-    session = boto3.Session()
-    credentials = session.get_credentials()
-    region = session.region_name or 'us-east-1'
-    
-    request = AWSRequest(
-        method='GET',
-        url=f'https://kafka.{region}.amazonaws.com/',
-        headers={'host': f'kafka.{region}.amazonaws.com'}
-    )
-    
-    SigV4Auth(credentials, 'kafka', region).add_auth(request)
-    return request.headers['Authorization']
 
 def process_command(command, producer):
     """

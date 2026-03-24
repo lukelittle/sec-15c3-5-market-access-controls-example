@@ -6,7 +6,7 @@ echo "Building order_router Lambda package..."
 rm -rf package dist
 mkdir -p package dist
 
-pip install -r requirements.txt -t package/
+pip3 install -r requirements.txt -t package/
 cp handler.py package/
 
 cd package

@@ -25,7 +25,7 @@ variable "vpc_cidr" {
 variable "low_cost_mode" {
   description = "Enable low-cost mode (single AZ, minimal capacity). WARNING: Reduces resiliency."
   type        = bool
-  default     = true
+  default     = false
 }
 
 # Risk Control Thresholds

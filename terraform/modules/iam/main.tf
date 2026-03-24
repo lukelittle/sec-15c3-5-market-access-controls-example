@@ -29,7 +29,9 @@ resource "aws_iam_role_policy" "order_generator" {
         Effect = "Allow"
         Action = [
           "kafka-cluster:Connect",
-          "kafka-cluster:DescribeCluster"
+          "kafka-cluster:CreateTopic",
+          "kafka-cluster:DescribeCluster",
+          "kafka-cluster:DescribeClusterDynamicConfiguration"
         ]
         Resource = var.msk_cluster_arn
       },
@@ -95,7 +97,9 @@ resource "aws_iam_role_policy" "killswitch_aggregator" {
         Effect = "Allow"
         Action = [
           "kafka-cluster:Connect",
-          "kafka-cluster:DescribeCluster"
+          "kafka-cluster:CreateTopic",
+          "kafka-cluster:DescribeCluster",
+          "kafka-cluster:DescribeClusterDynamicConfiguration"
         ]
         Resource = var.msk_cluster_arn
       },
@@ -104,7 +108,8 @@ resource "aws_iam_role_policy" "killswitch_aggregator" {
         Action = [
           "kafka-cluster:ReadData",
           "kafka-cluster:DescribeTopic",
-          "kafka-cluster:DescribeGroup"
+          "kafka-cluster:DescribeGroup",
+          "kafka-cluster:AlterGroup"
         ]
         Resource = [
           "${replace(var.msk_cluster_arn, ":cluster/", ":topic/")}/*",
@@ -180,7 +185,9 @@ resource "aws_iam_role_policy" "order_router" {
         Effect = "Allow"
         Action = [
           "kafka-cluster:Connect",
-          "kafka-cluster:DescribeCluster"
+          "kafka-cluster:CreateTopic",
+          "kafka-cluster:DescribeCluster",
+          "kafka-cluster:DescribeClusterDynamicConfiguration"
         ]
         Resource = var.msk_cluster_arn
       },
@@ -189,7 +196,8 @@ resource "aws_iam_role_policy" "order_router" {
         Action = [
           "kafka-cluster:ReadData",
           "kafka-cluster:DescribeTopic",
-          "kafka-cluster:DescribeGroup"
+          "kafka-cluster:DescribeGroup",
+          "kafka-cluster:AlterGroup"
         ]
         Resource = [
           "${replace(var.msk_cluster_arn, ":cluster/", ":topic/")}/*",
@@ -265,7 +273,9 @@ resource "aws_iam_role_policy" "operator_console" {
         Effect = "Allow"
         Action = [
           "kafka-cluster:Connect",
-          "kafka-cluster:DescribeCluster"
+          "kafka-cluster:CreateTopic",
+          "kafka-cluster:DescribeCluster",
+          "kafka-cluster:DescribeClusterDynamicConfiguration"
         ]
         Resource = var.msk_cluster_arn
       },

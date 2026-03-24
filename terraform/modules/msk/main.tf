@@ -20,7 +20,7 @@ resource "aws_msk_serverless_cluster" "main" {
 }
 
 data "aws_security_group" "msk" {
-  id = var.vpc_id
+  vpc_id = var.vpc_id
   filter {
     name   = "tag:Name"
     values = ["${var.name_prefix}-${var.environment}-msk-sg"]
