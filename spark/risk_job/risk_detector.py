@@ -9,12 +9,12 @@ import time
 import uuid
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import (
-    col, window, count, sum as spark_sum, max as spark_max,
+    col, window, count, sum as spark_sum, avg, max as spark_max,
     from_json, to_json, struct, lit, current_timestamp, unix_timestamp,
-    concat, when
+    concat, when, approx_count_distinct, udf, collect_list
 )
 from pyspark.sql.types import (
-    StructType, StructField, StringType, LongType, IntegerType, DoubleType
+    StructType, StructField, StringType, LongType, IntegerType, DoubleType, FloatType
 )
 
 # Configuration from environment/args
@@ -48,6 +48,16 @@ KAFKA_OPTIONS = {
     "kafka.sasl.client.callback.handler.class": "software.amazon.msk.auth.iam.IAMClientCallbackHandler",
 }
 
+@udf(FloatType())
+def compute_concentration(symbols):
+    """Compute top symbol concentration from collected symbol list."""
+    if not symbols:
+        return 0.0
+    from collections import Counter
+    counts = Counter(symbols)
+    most_common_count = counts.most_common(1)[0][1]
+    return float(most_common_count) / float(len(symbols))
+
 def create_spark_session():
     """Create Spark session with Kafka support"""
     return SparkSession.builder \
@@ -79,6 +89,7 @@ def compute_risk_signals(orders_df):
     """
     Compute risk signals using a single-level windowed aggregation.
     Uses 60-second tumbling windows per account.
+    Collects symbols and computes concentration in a UDF.
     """
     risk_signals = orders_df \
         .groupBy(
@@ -88,29 +99,35 @@ def compute_risk_signals(orders_df):
         .agg(
             count("*").alias("order_count"),
             spark_sum("notional").alias("total_notional"),
-            spark_max("symbol").alias("top_symbol")
+            avg("notional").alias("avg_notional"),
+            approx_count_distinct("symbol").alias("unique_symbols"),
+            spark_max("symbol").alias("top_symbol"),
+            collect_list("symbol").alias("_symbols")
         ) \
-        .withColumn("avg_notional", col("total_notional") / col("order_count")) \
         .withColumn("window_start", col("window.start")) \
         .withColumn("window_end", col("window.end")) \
         .withColumn("ts", (unix_timestamp(current_timestamp()) * 1000).cast("long")) \
-        .drop("window")
+        .withColumn("top_symbol_share", compute_concentration(col("_symbols"))) \
+        .drop("window", "_symbols")
 
     return risk_signals
 
 def detect_threshold_breaches(risk_signals_df):
     """
     Detect threshold breaches and generate kill commands.
-    Checks order rate and notional thresholds.
+    Checks order rate, notional, and symbol concentration thresholds.
     """
     breaches = risk_signals_df \
         .withColumn("order_rate_breach",
                     col("order_count") > lit(ORDER_RATE_THRESHOLD)) \
         .withColumn("notional_breach",
                     col("total_notional") > lit(NOTIONAL_THRESHOLD)) \
+        .withColumn("concentration_breach",
+                    col("top_symbol_share") > lit(SYMBOL_CONCENTRATION_THRESHOLD)) \
         .filter(
             col("order_rate_breach") |
-            col("notional_breach")
+            col("notional_breach") |
+            col("concentration_breach")
         )
 
     kill_commands = breaches \
@@ -129,14 +146,20 @@ def detect_threshold_breaches(risk_signals_df):
                          concat(lit("Notional breach: $"),
                                 col("total_notional").cast("string"),
                                 lit(" in 60s")))
+                    .when(col("concentration_breach"),
+                         concat(lit("Symbol concentration breach: "),
+                                (col("top_symbol_share") * 100).cast("string"),
+                                lit("% in "), col("top_symbol")))
                     .otherwise(lit("Multiple breaches"))) \
         .withColumn("metric",
                     when(col("order_rate_breach"), lit("order_rate_60s"))
                     .when(col("notional_breach"), lit("notional_60s"))
+                    .when(col("concentration_breach"), lit("symbol_concentration"))
                     .otherwise(lit("multiple"))) \
         .withColumn("value",
                     when(col("order_rate_breach"), col("order_count"))
                     .when(col("notional_breach"), col("total_notional"))
+                    .when(col("concentration_breach"), col("top_symbol_share"))
                     .otherwise(lit(0.0)))
 
     return kill_commands.select(
