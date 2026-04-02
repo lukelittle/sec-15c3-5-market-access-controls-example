@@ -83,7 +83,7 @@ def read_orders_stream(spark):
         .select("order.*") \
         .withColumn("notional", col("qty") * col("price")) \
         .withColumn("event_time", (col("ts") / 1000).cast("timestamp")) \
-        .withWatermark("event_time", "30 seconds")
+        .withWatermark("event_time", "60 seconds")
 
 def compute_risk_signals(orders_df):
     """
